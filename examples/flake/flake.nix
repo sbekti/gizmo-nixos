@@ -4,7 +4,7 @@
 
   inputs = {
     # This makes the example buildable from this checkout. Replace with
-    # github:OWNER/gizmo-nixos when copying the example into another repo.
+    # github:jda/gizmo-nixos when copying the example into another repo.
     gizmo-nixos.url = "path:../..";
   };
 
