@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -u
+
+show_nfc_state() {
+  local label="$1"
+
+  echo
+  echo "== NFC IRQ/GPIO state: $label =="
+  grep -E 'gizmo-intc.*pn544|pn544' /proc/interrupts || true
+  if [ -r /sys/kernel/debug/gpio ]; then
+    grep -E 'nfc_en|nfc_intr' /sys/kernel/debug/gpio || true
+  fi
+}
+
+echo "== NFC modules =="
+lsmod | grep -E '(^gizmo_pn544|^nfc|^nci|^pn544|^nxp_nci)' || true
+
+echo
+echo "== gizmo-pn544 parameters =="
+if [ -d /sys/module/gizmo_pn544/parameters ]; then
+  for param in /sys/module/gizmo_pn544/parameters/*; do
+    printf '%s=' "$(basename "$param")"
+    cat "$param"
+  done
+else
+  echo "gizmo_pn544 module is not loaded"
+fi
+
+echo
+echo "== /dev/pn544 =="
+ls -l /dev/pn544 2>/dev/null || {
+  echo "/dev/pn544 is missing"
+  echo "Check: systemctl status gizmo-load-nfc --no-pager"
+  exit 1
+}
+
+echo
+echo "== quick i2c context =="
+i2cdetect -l | grep -E 'i2c-ocores|mux' || true
+
+show_nfc_state "before"
+
+echo
+gizmo-nfc-test "$@"
+status=$?
+
+show_nfc_state "after"
+exit "$status"

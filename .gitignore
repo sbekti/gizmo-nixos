@@ -1,0 +1,17 @@
+result
+result-*
+*.img
+*.img.zst
+*.qcow2
+*.iso
+*.tar.zst
+
+.agents/
+.codex/
+.direnv/
+
+gizmo_project_plan.md
+gizmo-collector-*/
+gizmo-collector-*.tar.zst
+
+nixos/sites/

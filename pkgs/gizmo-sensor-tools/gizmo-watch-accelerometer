@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -u
+
+usage() {
+  cat <<'EOF'
+Usage: gizmo-watch-accelerometer [interval_seconds]
+
+Print BMC150 accelerometer readings until interrupted.
+Tilt or rotate the Gizmo; at least one axis should change noticeably.
+EOF
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
+
+interval="${1:-0.25}"
+
+find_accelerometer() {
+  local dev name
+
+  for dev in /sys/bus/iio/devices/iio:device*; do
+    [ -e "$dev" ] || continue
+    name="$(cat "$dev/name" 2>/dev/null || true)"
+    case "$name" in
+      bmc150_accel|bmc156_accel|bmi055_accel|bma*)
+        echo "$dev"
+        return 0
+        ;;
+    esac
+  done
+
+  for dev in /sys/bus/iio/devices/iio:device*; do
+    [ -e "$dev/in_accel_x_raw" ] && [ -e "$dev/in_accel_y_raw" ] && [ -e "$dev/in_accel_z_raw" ] || continue
+    echo "$dev"
+    return 0
+  done
+
+  return 1
+}
+
+read_first() {
+  local attr value
+
+  for attr in "$@"; do
+    if [ -r "$device/$attr" ]; then
+      if value="$(cat "$device/$attr" 2>/dev/null)"; then
+        printf '%s' "$value"
+      else
+        printf 'ERR'
+      fi
+      return 0
+    fi
+  done
+
+  printf 'NA'
+}
+
+device="${IIO_DEVICE:-$(find_accelerometer || true)}"
+if [ -z "$device" ]; then
+  cat <<'EOF' >&2
+No accelerometer IIO device found.
+
+Try:
+  gizmo-list-sensors
+  dmesg | grep -Ei 'bmc150|iio|ocores'
+EOF
+  exit 1
+fi
+
+name="$(cat "$device/name" 2>/dev/null || echo unknown)"
+echo "Watching $device ($name), interval ${interval}s. Press Ctrl-C to stop."
+
+while true; do
+  printf '%s x=%s y=%s z=%s scale=%s\n' \
+    "$(date +%H:%M:%S)" \
+    "$(read_first in_accel_x_raw in_accel_x_input)" \
+    "$(read_first in_accel_y_raw in_accel_y_input)" \
+    "$(read_first in_accel_z_raw in_accel_z_input)" \
+    "$(read_first in_accel_scale)"
+  sleep "$interval"
+done

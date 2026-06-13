@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -u
+
+found=0
+
+print_i2c_hint() {
+  local target base bus addr
+
+  target="$(readlink -f "$1/device" 2>/dev/null || true)"
+  [ -n "$target" ] || return 0
+
+  echo "device: $target"
+
+  base="$(basename "$target")"
+  if [[ "$base" =~ ^([0-9]+)-00([0-9a-fA-F]{2})$ ]]; then
+    bus="${BASH_REMATCH[1]}"
+    addr="${BASH_REMATCH[2]}"
+    echo "i2c: i2c-$bus address 0x$addr"
+  fi
+}
+
+print_attrs() {
+  local dev f any
+
+  dev="$1"
+  any=0
+
+  for f in "$dev"/in_* "$dev"/sampling_frequency "$dev"/integration_time* "$dev"/scale_available; do
+    [ -f "$f" ] || continue
+    any=1
+    printf '  %s=' "$(basename "$f")"
+    tr -d '\n' <"$f" 2>/dev/null || printf '?'
+    printf '\n'
+  done
+
+  [ "$any" -eq 1 ] || echo "  no readable in_* attributes"
+}
+
+for dev in /sys/bus/iio/devices/iio:device*; do
+  [ -e "$dev" ] || continue
+  found=1
+
+  name="$(cat "$dev/name" 2>/dev/null || echo unknown)"
+  echo "== $dev ($name) =="
+  print_i2c_hint "$dev"
+  print_attrs "$dev"
+  echo
+done
+
+if [ "$found" -eq 0 ]; then
+  cat <<'EOF'
+No IIO devices found.
+
+Expected Gizmo sensors:
+  0x10 bmc150_accel accelerometer
+  0x12 bmc150_magn magnetometer
+  0x44 isl29023 ambient light sensor
+
+Useful diagnostics:
+  lsmod | grep -E 'gizmo_cpld_i2c|bmc150|isl29018|industrialio'
+  dmesg | grep -Ei 'gizmo-cpld-i2c|ocores|bmc150|isl290|iio'
+  i2cdetect -l
+EOF
+  exit 1
+fi

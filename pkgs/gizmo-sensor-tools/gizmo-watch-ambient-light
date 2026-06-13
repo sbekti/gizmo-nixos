@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MIT
+set -u
+
+usage() {
+  cat <<'EOF'
+Usage: gizmo-watch-ambient-light [interval_seconds]
+
+Print ISL29023 ambient light readings until interrupted.
+Cover/uncover the light sensor or shine light at it; illuminance should change.
+EOF
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+  usage
+  exit 0
+fi
+
+interval="${1:-0.5}"
+
+find_light_sensor() {
+  local dev name
+
+  for dev in /sys/bus/iio/devices/iio:device*; do
+    [ -e "$dev" ] || continue
+    name="$(cat "$dev/name" 2>/dev/null || true)"
+    case "$name" in
+      isl29018|isl29023|isl29035)
+        echo "$dev"
+        return 0
+        ;;
+    esac
+  done
+
+  for dev in /sys/bus/iio/devices/iio:device*; do
+    [ -e "$dev/in_illuminance_raw" ] \
+      || [ -e "$dev/in_illuminance_input" ] \
+      || [ -e "$dev/in_illuminance0_raw" ] \
+      || [ -e "$dev/in_illuminance0_input" ] \
+      || continue
+    echo "$dev"
+    return 0
+  done
+
+  return 1
+}
+
+read_first_attr() {
+  local attr value
+
+  for attr in "$@"; do
+    if [ -r "$device/$attr" ]; then
+      if value="$(cat "$device/$attr" 2>/dev/null)"; then
+        printf '%s' "$value"
+      else
+        printf 'ERR'
+      fi
+      return 0
+    fi
+  done
+
+  printf 'NA'
+}
+
+print_light_values() {
+  local raw scale input lux f any
+
+  raw="$(read_first_attr in_illuminance_raw in_illuminance0_raw)"
+  scale="$(read_first_attr in_illuminance_scale in_illuminance0_scale)"
+  input="$(read_first_attr in_illuminance_input in_illuminance0_input)"
+
+  printf '%s' "$(date +%H:%M:%S)"
+  if [ "$input" != "NA" ]; then
+    printf ' illuminance_input=%s' "$input"
+  fi
+  if [ "$raw" != "NA" ]; then
+    printf ' illuminance_raw=%s' "$raw"
+  fi
+  if [ "$scale" != "NA" ]; then
+    printf ' scale=%s' "$scale"
+  fi
+  if [ "$raw" != "NA" ] && [ "$scale" != "NA" ]; then
+    lux="$(awk -v raw="$raw" -v scale="$scale" 'BEGIN { printf "%.3f", raw * scale }')"
+    printf ' raw_x_scale=%s' "$lux"
+  fi
+
+  any=0
+  for f in "$device"/in_intensity* "$device"/in_proximity*; do
+    [ -f "$f" ] || continue
+    any=1
+    printf ' %s=' "$(basename "$f")"
+    tr -d '\n' <"$f" 2>/dev/null || printf '?'
+  done
+
+  if [ "$input" = "NA" ] && [ "$raw" = "NA" ] && [ "$any" -eq 0 ]; then
+    printf ' no readable light attributes'
+  fi
+
+  printf '\n'
+}
+
+device="${IIO_DEVICE:-$(find_light_sensor || true)}"
+if [ -z "$device" ]; then
+  cat <<'EOF' >&2
+No ambient light IIO device found.
+
+Try:
+  gizmo-list-sensors
+  dmesg | grep -Ei 'isl290|iio|ocores'
+EOF
+  exit 1
+fi
+
+name="$(cat "$device/name" 2>/dev/null || echo unknown)"
+echo "Watching $device ($name), interval ${interval}s. Press Ctrl-C to stop."
+
+while true; do
+  print_light_values
+  sleep "$interval"
+done
