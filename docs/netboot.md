@@ -9,6 +9,8 @@ Built-in storage -> iPXE -> DHCP boot address
   -> kiosk files over HTTP -> system runs in memory
 ```
 
+Gizmo ships with its own network boot firmware, but it is hardcoded to fetch its image from Meta's internal infrastructure, which is not reachable outside that network. Installing a vanilla iPXE bootloader on the built-in storage replaces that path so the device boots from your own server instead.
+
 ## What you will need
 
 - A Gizmo with wired Ethernet.
