@@ -179,7 +179,9 @@ On power-on, Gizmo now starts iPXE directly, picks up its boot address from DHCP
 
 ## What happens on each boot
 
-The `kiosk.ipxe` file tells iPXE where to find the kernel and system image:
+The kiosk system is too large to load in one step through iPXE — downloading the full image there hits firmware memory limits. Booting happens in two stages instead: iPXE loads only the small kernel and initrd, then Linux downloads the large system image itself.
+
+The `kiosk.ipxe` file tells iPXE where to find the kernel and how Linux should fetch the rest:
 
 ```ipxe
 kernel bzImage init=<system-init> initrd=initrd
@@ -190,7 +192,14 @@ initrd initrd
 boot
 ```
 
-The system downloads the image into memory, checks its checksum, and starts it. It then mounts the data partition for the browser profile and opens Chromium in kiosk mode.
+What each part does:
+
+- `bzImage` and `initrd` are small (tens of megabytes) and load by relative URL from the same folder. This is all iPXE downloads.
+- `gizmo.store_url` points at the large compressed system image (`store.squashfs`, around a gigabyte).
+- `gizmo.store_sha256` is its checksum. Publish it in `SHA256SUMS` alongside the release and render it into the boot script when you publish.
+- `gizmo.mode=kiosk` selects the kiosk configuration.
+
+After the kernel starts, the initrd waits for the network, downloads the store image into memory with a few retries, checks its checksum, and loop-mounts it as the read-only system. Only then does the real system start. It mounts the data partition for the browser profile and opens Chromium in kiosk mode.
 
 ## Checking it works
 
